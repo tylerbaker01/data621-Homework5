@@ -1,0 +1,214 @@
+---
+title: "Data 621 HW#5"
+author: "Tyler Baker and Jay Lee"
+date: "2022-12-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggplot2)
+library(psych)
+library(Hmisc)
+library(GGally)
+library(MASS)
+```
+
+# Objective
+
+In this homework assignment, you will explore, analyze and model a data set containing information on
+approximately 12,000 commercially available wines. The variables are mostly related to the chemical properties of
+the wine being sold. The response variable is the number of sample cases of wine that were purchased by wine
+distribution companies after sampling a wine. These cases would be used to provide tasting samples to
+restaurants and wine stores around the United States. The more sample cases purchased, the more likely is a
+wine to be sold at a high end restaurant. A large wine manufacturer is studying the data in order to predict the
+number of wine cases ordered based upon the wine characteristics. If the wine manufacturer can predict the
+number of cases, then that manufacturer will be able to adjust their wine offering to maximize sales.
+Your objective is to build a count regression model to predict the number of cases of wine that will be sold
+given certain properties of the wine. HINT: Sometimes, the fact that a variable is missing is actually predictive of
+the target. You can only use the variables given to you (or variables that you derive from the variables provided).
+Below is a short description of the variables of interest in the data set:
+
+
+# Data Exploration
+## Load Data
+```{r}
+train_df <- read.csv("https://raw.githubusercontent.com/tylerbaker01/data621/main/wine-training-data.csv")
+test_df <- read.csv("https://raw.githubusercontent.com/tylerbaker01/data621/main/wine-evaluation-data.csv")
+```
+
+```{r}
+head(train_df)
+```
+## Stats
+```{r}
+describe(train_df)
+```
+## Basic Plots
+Looking at the histogram for each variable
+```{r}
+hist.data.frame(train_df)
+```
+
+
+
+Everything looks pretty close to a normal distribution. Also, LabelAppeal, AcidIndex, and STARS are actually categorical variables.
+
+## NAs
+Next we want to count the number of NAs.
+```{r}
+colSums(is.na(train_df))
+```
+
+Well, since we have almost 13,000 observations, we have decided that we can simply remove the NAs from the data set. Except for the STARS variable. Since it takes factors, we will simply turn NA into a factor.
+
+
+
+
+# Data Tidying
+## Data Types
+
+We need to change the datatypes of a few variables. 
+```{r}
+train_df$LabelAppeal <- as.factor(train_df$LabelAppeal)
+train_df$AcidIndex <- as.factor(train_df$AcidIndex)
+train_df$STARS <- as.factor(train_df$STARS)
+test_df$LabelAppeal <- as.factor(test_df$LabelAppeal)
+test_df$AcidIndex <- as.factor(test_df$AcidIndex)
+test_df$STARS <- as.factor(test_df$STARS)
+```
+
+## NA handling
+```{r}
+train_df$STARS <- addNA(train_df$STARS)
+train_df <- na.omit(train_df)
+test_df$STARS <- addNA(test_df$STARS)
+```
+
+# Building Models
+
+We will build a poisson model, and a negative binomial regression model.
+
+## Splitting the training data.
+```{r}
+set.seed(123)
+partition <- sample(1:nrow(train_df), size=nrow(train_df)*0.7,replace=FALSE)
+
+train.data <-train_df[partition, ]
+test.data <- train_df[-partition, ]
+
+target <- test.data$`TARGET`
+
+```
+
+```{r}
+colnames(test.data) <- c("index", "TARGET", "FixedAcidity", "VolatileAcidity", "CitricAcid", "ResidualSugar", "Chlorides", "FreeSulfurDioxide", "TotalSulfurDioxide", "Density", "pH", "Sulphates", "Alcohol", "LabelAppeal", "AcidIndex", "STARS")
+colnames(train.data) <- c("index", "TARGET", "FixedAcidity", "VolatileAcidity", "CitricAcid", "ResidualSugar", "Chlorides", "FreeSulfurDioxide", "TotalSulfurDioxide", "Density", "pH", "Sulphates", "Alcohol", "LabelAppeal", "AcidIndex", "STARS")
+```
+
+
+
+## Poisson W/ All Variables
+```{r}
+model1.a <- glm(TARGET ~., data=train.data, family = poisson)
+summary(model1.a)
+```
+
+## Poisson W/ only the Significant Variables
+```{r}
+model1.b<- glm(TARGET ~ VolatileAcidity + Chlorides + FreeSulfurDioxide + TotalSulfurDioxide + Density + Alcohol + LabelAppeal + AcidIndex + STARS ,data=train.data, family = poisson)
+summary(model1.b)
+```
+
+## Negative Binomial Regression W/ All Variables
+```{r}
+model2.a <- glm.nb(TARGET ~., data=train.data)
+summary(model2.a)
+```
+
+## Negative Binomial Regression W/ Only Significant Variables
+```{r}
+model2.b <- glm.nb(TARGET~ VolatileAcidity + Chlorides + FreeSulfurDioxide + TotalSulfurDioxide + Density + Alcohol + LabelAppeal + AcidIndex + STARS , data=train.data)
+summary(model2.b)
+```
+
+# Model Selection
+
+We will compare the models by they're accuracy scores.
+
+## Model 1.A
+```{r}
+predictions <- as.data.frame(predict(model1.a, newdata = test.data))
+
+accuracy_df <- target
+
+accuracy_df <- merge(accuracy_df, predictions)
+accuracy_df$error <- abs(accuracy_df$x - accuracy_df$`predict(model1.a, newdata = test.data)`)
+accuracy_df$error_percentage <- ((accuracy_df$`predict(model1.a, newdata = test.data)` - accuracy_df$x)/accuracy_df$x) * 100
+avg_error <- mean(accuracy_df$error)
+avg_percentage_error <- mean(accuracy_df$error_percentage)
+print(avg_error)
+print(avg_percentage_error)
+```
+
+
+## Model 1.B
+```{r}
+predictions <- as.data.frame(predict(model1.b, newdata = test.data))
+
+accuracy_df <- target
+
+accuracy_df <- merge(accuracy_df, predictions)
+accuracy_df$error <- abs(accuracy_df$x - accuracy_df$`predict(model1.b, newdata = test.data)`)
+accuracy_df$error_percentage <- ((accuracy_df$`predict(model1.b, newdata = test.data)` - accuracy_df$x)/accuracy_df$x) * 100
+avg_error <- mean(accuracy_df$error)
+avg_percentage_error <- mean(accuracy_df$error_percentage)
+print(avg_error)
+print(avg_percentage_error)
+```
+
+
+## Model 2.A
+```{r}
+predictions <- as.data.frame(predict(model2.a, newdata = test.data))
+
+accuracy_df <- target
+
+accuracy_df <- merge(accuracy_df, predictions)
+accuracy_df$error <- abs(accuracy_df$x - accuracy_df$`predict(model2.a, newdata = test.data)`)
+accuracy_df$error_percentage <- ((accuracy_df$`predict(model2.a, newdata = test.data)` - accuracy_df$x)/accuracy_df$x) * 100
+avg_error <- mean(accuracy_df$error)
+avg_percentage_error <- mean(accuracy_df$error_percentage)
+print(avg_error)
+print(avg_percentage_error)
+```
+
+## Model 2.B
+```{r}
+predictions <- as.data.frame(predict(model2.b, newdata = test.data))
+
+accuracy_df <- target
+
+accuracy_df <- merge(accuracy_df, predictions)
+accuracy_df$error <- abs(accuracy_df$x - accuracy_df$`predict(model2.b, newdata = test.data)`)
+accuracy_df$error_percentage <- ((accuracy_df$`predict(model2.b, newdata = test.data)` - accuracy_df$x)/accuracy_df$x) * 100
+avg_error <- mean(accuracy_df$error)
+avg_percentage_error <- mean(accuracy_df$error_percentage)
+print(avg_error)
+print(avg_percentage_error)
+```
+
+The NaNs are due to the fact that some of the wines simply didn't sell a case. So that would make a 0 in the denomenator. Thus, it won't work. We can still check the average rate however. 
+
+Our best model was model1.b with an average error rate of 2.500699
+
+# Predictions
+```{r}
+predictions <- as.data.frame(predict(model1.b, newdata = test_df))
+test_df$predictions <- predictions
+results <- test_df[c("IN", "predictions")]
+```
+
+
+
